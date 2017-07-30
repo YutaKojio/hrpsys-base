@@ -78,97 +78,26 @@ public:
     {
         return leg_pos(0) <= (-1 * leg_rear_margin + margin);
     };
-    inline bool is_inside_support_polygon (Eigen::Vector2d& p, const std::vector<hrp::Vector3>& ee_pos, const std::vector <hrp::Matrix33>& ee_rot, const std::vector<std::string>& ee_name, const leg_type& support_leg, const std::vector<double>& tmp_margin = std::vector<double>(), const hrp::Vector3& offset = hrp::Vector3(0.0, 0.0, 0.0), bool calc_nearest_point = false)
+    inline bool is_inside_support_polygon (Eigen::Vector2d& p, const std::vector<Eigen::Vector2d>& ch, const hrp::Vector3& offset = hrp::Vector3::Zero())
     {
-      // vector size zero check
-      if (ee_pos.size() == 0 || ee_rot.size() == 0 || ee_name.size() == 0 ) return true;
-      // vector size check
-      //   TODO : currently 2 feet is supported.
-      if ( !(ee_pos.size() == 2 && ee_rot.size() == 2 && ee_name.size() == 2) ) return true;
-      size_t l_idx, r_idx;
-      for (size_t i = 0; i < ee_name.size(); i++) {
-        if (ee_name[i]=="rleg") r_idx = i;
-        else if (ee_name[i]=="lleg") l_idx = i;
-      }
-      std::vector<Eigen::Vector2d> rleg_vertices;
-      std::vector<Eigen::Vector2d> lleg_vertices;
-      std::vector<Eigen::Vector2d> convex_vertices;
-
-      // assume that each foot vertices has four vertices
-      std::vector<double> margin(4, 0.0);
-      for (size_t i = 0; i < tmp_margin.size(); i++) {
-        margin[i] = tmp_margin[i];
-      }
-      // RLEG
-      rleg_vertices.push_back(Eigen::Vector2d(ee_pos[r_idx](0) + leg_front_margin - margin[0] + offset(0), ee_pos[r_idx](1) + leg_inside_margin - margin[2] + offset(1)));
-      rleg_vertices.push_back(Eigen::Vector2d(ee_pos[r_idx](0) + leg_front_margin - margin[0] + offset(0), ee_pos[r_idx](1) + -1*(leg_outside_margin - margin[3]) + offset(1)));
-      rleg_vertices.push_back(Eigen::Vector2d(ee_pos[r_idx](0) + -1*(leg_rear_margin - margin[1]) + offset(0), ee_pos[r_idx](1) + -1*(leg_outside_margin - margin[3]) + offset(1)));
-      rleg_vertices.push_back(Eigen::Vector2d(ee_pos[r_idx](0) + -1*(leg_rear_margin - margin[1]) + offset(0), ee_pos[r_idx](1) + leg_inside_margin - margin[2] + offset(1)));
-      // LLEG
-      lleg_vertices.push_back(Eigen::Vector2d(ee_pos[l_idx](0) + leg_front_margin - margin[0] + offset(0), ee_pos[l_idx](1) + leg_outside_margin - margin[3] + offset(1)));
-      lleg_vertices.push_back(Eigen::Vector2d(ee_pos[l_idx](0) + leg_front_margin - margin[0] + offset(0), ee_pos[l_idx](1) + -1*(leg_inside_margin - margin[2]) + offset(1)));
-      lleg_vertices.push_back(Eigen::Vector2d(ee_pos[l_idx](0) + -1*(leg_rear_margin - margin[1]) + offset(0), ee_pos[l_idx](1) + -1*(leg_inside_margin - margin[2]) + offset(1)));
-      lleg_vertices.push_back(Eigen::Vector2d(ee_pos[l_idx](0) + -1*(leg_rear_margin - margin[1]) + offset(0), ee_pos[l_idx](1) + leg_outside_margin - margin[3] + offset(1)));
-
-      if (support_leg == BOTH) {
-        // sort vertices in clockwise order
-        convex_vertices.push_back(lleg_vertices[0]);
-        convex_vertices.push_back(lleg_vertices[1]);
-        std::copy(rleg_vertices.begin(),rleg_vertices.end(),std::back_inserter(convex_vertices));
-        convex_vertices.push_back(lleg_vertices[2]);
-        convex_vertices.push_back(lleg_vertices[3]);
-        convex_vertices = calcConvexHull(convex_vertices);
-      } else if (support_leg == RLEG) {
-        convex_vertices = rleg_vertices;
-      } else if (support_leg == LLEG) {
-        convex_vertices = lleg_vertices;
-      }
-      // check whether p is inside support polygon
-      if (!calc_nearest_point) {
-        for (size_t i = 0; i < convex_vertices.size() - 1; i++) {
-          if (calcCrossProduct(p, convex_vertices[i + 1], convex_vertices[i]) < 0) return false;
-        }
-        if (calcCrossProduct(p, convex_vertices.front(), convex_vertices.back()) < 0) return false;
-        return true;
-      }
-      // calc nearest point
-      bool is_inside = true;
-      double cur_nearest_dist, nearest_dist;
-      Eigen::Vector2d cur_nearest_point, nearest_point;
-      if (calcCrossProduct(p, convex_vertices.front(), convex_vertices.back()) < 0) { // is outside
-        if (calcProjectedPoint(cur_nearest_point, p, convex_vertices.front(), convex_vertices.back())) { // projected point is on line
-          p = cur_nearest_point;
-          return false;
-        } else { // projected point is not on line
-          nearest_dist = (cur_nearest_point - p).norm();
-          nearest_point = cur_nearest_point;
-        }
-        is_inside = false;
-      }
-      for (size_t i = 0; i < convex_vertices.size() - 1; i++) {
-        if (calcCrossProduct(p, convex_vertices[i + 1], convex_vertices[i]) < 0) { // is outside
-          if (calcProjectedPoint(cur_nearest_point, p, convex_vertices[i + 1], convex_vertices[i])) { // projected point is on line
-            p = cur_nearest_point;
-            return false;
-          } else { // projected point is not on line
-            cur_nearest_dist = (cur_nearest_point - p).norm();
-            if (is_inside || i == 0) { // first set
-              nearest_dist = cur_nearest_dist;
-              nearest_point = cur_nearest_point;
-            } else if (cur_nearest_dist < nearest_dist) { // update nearest candidate
-              nearest_dist = cur_nearest_dist;
-              nearest_point = cur_nearest_point;
-            }
-          }
-          is_inside = false;
-        }
-      }
-      if (is_inside) {
-          return true;
+      // set any inner point(ip) and binary search two vertices(ch[v_a], ch[v_b]) between which p is.
+      p -= offset.head(2);
+      size_t n_ch = ch.size();
+      Eigen::Vector2d ip = (ch[0] + ch[n_ch/3] + ch[2*n_ch/3]) / 3.0;
+      size_t v_a = 0, v_b = n_ch;
+      while (v_a + 1 < v_b) {
+        size_t v_c = (v_a + v_b) / 2;
+        if (calcCrossProduct(ch[v_a], ch[v_c], ip) > 0) {
+          if (calcCrossProduct(ch[v_a], p, ip) > 0 && calcCrossProduct(ch[v_c], p, ip) < 0) v_b = v_c;
+          else v_a = v_c;
         } else {
-          p = nearest_point;
-          return false;
+          if (calcCrossProduct(ch[v_a], p, ip) < 0 && calcCrossProduct(ch[v_c], p, ip) > 0) v_a = v_c;
+          else v_b = v_c;
+        }
       }
+      v_b %= n_ch;
+      if (calcCrossProduct(ch[v_a], ch[v_b], p) >= 0) return true;
+      return false;
     };
     void print_params (const std::string& str)
     {
@@ -178,6 +107,37 @@ public:
     void print_vertices (const std::string& str)
     {
         fs.print_vertices(str);
+    };
+    // Compare Vector2d for sorting lexicographically
+    static bool compare_eigen2d(const Eigen::Vector2d& lv, const Eigen::Vector2d& rv)
+    {
+      return lv(0) < rv(0) || (lv(0) == rv(0) && lv(1) < rv(1));
+    };
+    // Calculate 2D convex hull based on Andrew's algorithm
+    // Assume that the order of vs, ee, and cs is the same
+    void calc_convex_hull (std::vector<Eigen::Vector2d>& ch, const std::vector<std::vector<Eigen::Vector2d> >& vs, const std::vector<bool>& cs, const std::vector<hrp::Vector3>& ee_pos, const std::vector <hrp::Matrix33>& ee_rot)
+    {
+      // transform coordinate
+      std::vector<Eigen::Vector2d>  tvs;
+      hrp::Vector3 tpos;
+      tvs.reserve(cs.size()*vs[0].size());
+      for (size_t i = 0; i < cs.size(); i++) {
+        if (cs[i]) {
+          for (size_t j = 0; j < vs[i].size(); j++) {
+            tpos = ee_pos[i] + ee_rot[i] * hrp::Vector3(vs[i][j](0), vs[i][j](1), 0.0);
+            tvs.push_back(tpos.head(2));
+          }
+        }
+      }
+      // calculate convex hull
+      int n_tvs = tvs.size(), n_ch = 0;
+      ch.resize(2*n_tvs);
+      std::sort(tvs.begin(), tvs.end(), compare_eigen2d);
+      for (int i = 0; i < n_tvs; ch[n_ch++] = tvs[i++])
+        while (n_ch >= 2 && calcCrossProduct(ch[n_ch-1], tvs[i], ch[n_ch-2]) <= 0) n_ch--;
+      for (int i = n_tvs-2, j = n_ch+1; i >= 0; ch[n_ch++] = tvs[i--])
+        while (n_ch >= j && calcCrossProduct(ch[n_ch-1], tvs[i], ch[n_ch-2]) <= 0) n_ch--;
+      ch.resize(n_ch-1);
     };
     // setter
     void set_wrench_alpha_blending (const double a) { wrench_alpha_blending = a; };
@@ -1123,7 +1083,7 @@ public:
         }
     };
 
-  double calcCrossProduct(Eigen::Vector2d& a, Eigen::Vector2d& b, Eigen::Vector2d& o)
+  double calcCrossProduct(const Eigen::Vector2d& a, const Eigen::Vector2d& b, const Eigen::Vector2d& o)
   {
     return (a(0) - o(0)) * (b(1) - o(1)) - (a(1) - o(1)) * (b(0) - o(0));
   };
@@ -1148,20 +1108,6 @@ public:
             return true;
         }
     }
-  };
-
-  // assume that vertices are listed in clockwise order
-  std::vector<Eigen::Vector2d> calcConvexHull(std::vector<Eigen::Vector2d> vertices)
-  {
-    std::vector<Eigen::Vector2d> convex_vertices;
-
-    convex_vertices.push_back(vertices.front());
-    for (size_t i = 1; i < vertices.size() - 1; i++) {
-      if (calcCrossProduct(vertices[i + 1], vertices[i - 1], vertices[i]) < 0) convex_vertices.push_back(vertices[i]);
-    }
-    convex_vertices.push_back(vertices.back());
-
-    return convex_vertices;
   };
 };
 

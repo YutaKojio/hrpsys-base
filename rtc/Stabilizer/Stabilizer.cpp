@@ -948,18 +948,6 @@ void Stabilizer::getActualParameters ()
           }
       }
 
-      // truncate ZMP
-      if (use_zmp_truncation) {
-        Eigen::Vector2d tmp_new_refzmp(new_refzmp.head(2));
-        SimpleZMPDistributor::leg_type support_leg;
-        if (ref_contact_states[contact_states_index_map["rleg"]] && ref_contact_states[contact_states_index_map["lleg"]]) support_leg = SimpleZMPDistributor::BOTH;
-        else if (ref_contact_states[contact_states_index_map["rleg"]]) support_leg = SimpleZMPDistributor::RLEG;
-        else if (ref_contact_states[contact_states_index_map["lleg"]]) support_leg = SimpleZMPDistributor::LLEG;
-        if (!szd->is_inside_support_polygon(tmp_new_refzmp, ee_pos, ee_rot, ee_name, support_leg, std::vector<double>(), hrp::Vector3(0.0, 0.0, 0.0), true)){
-          new_refzmp.head(2) = tmp_new_refzmp;
-        }
-      }
-
       // Distribute ZMP into each EE force/moment at each COP
       if (st_algorithm == OpenHRP::StabilizerService::EEFM) {
           // Modified version of distribution in Equation (4)-(6) and (10)-(13) in the paper [1].
@@ -1335,20 +1323,11 @@ void Stabilizer::calcStateForEmergencySignal()
   // CP Check
   bool is_cp_outside = false;
   if (on_ground && transition_count == 0 && control_mode == MODE_ST) {
-    SimpleZMPDistributor::leg_type support_leg;
-    size_t l_idx, r_idx;
-    Eigen::Vector2d tmp_cp;
-    for (size_t i = 0; i < rel_ee_name.size(); i++) {
-      if (rel_ee_name[i]=="rleg") r_idx = i;
-      else if (rel_ee_name[i]=="lleg") l_idx = i;
-    }
-    for (size_t i = 0; i < 2; i++) {
-      tmp_cp(i) = act_cp(i);
-    }
-    if (act_contact_states[contact_states_index_map["rleg"]] && act_contact_states[contact_states_index_map["lleg"]]) support_leg = SimpleZMPDistributor::BOTH;
-    else if (act_contact_states[contact_states_index_map["rleg"]]) support_leg = SimpleZMPDistributor::RLEG;
-    else if (act_contact_states[contact_states_index_map["lleg"]]) support_leg = SimpleZMPDistributor::LLEG;
-    if (!is_walking || is_estop_while_walking) is_cp_outside = !szd->is_inside_support_polygon(tmp_cp, rel_ee_pos, rel_ee_rot, rel_ee_name, support_leg, cp_check_margin, - sbp_cog_offset);
+    Eigen::Vector2d tmp_cp = act_cp.head(2);
+    szd->get_margined_vertices(margined_support_polygon_vetices);
+    std::vector<Eigen::Vector2d>  tmp_ch;
+    szd->calc_convex_hull(tmp_ch, margined_support_polygon_vetices, act_contact_states, rel_ee_pos, rel_ee_rot);
+    if (!is_walking || is_estop_while_walking) is_cp_outside = !szd->is_inside_support_polygon(tmp_cp, tmp_ch, - sbp_cog_offset);
     if (DEBUGP) {
       std::cerr << "[" << m_profile.instance_name << "] CP value " << "[" << act_cp(0) << "," << act_cp(1) << "] [m], "
                 << "sbp cog offset [" << sbp_cog_offset(0) << " " << sbp_cog_offset(1) << "], outside ? "
