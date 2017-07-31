@@ -948,6 +948,23 @@ void Stabilizer::getActualParameters ()
           }
       }
 
+      // truncate ZMP
+      if (use_zmp_truncation) {
+        Eigen::Vector2d tmp_new_refzmp(new_refzmp.head(2));
+        szd->get_vertices(support_polygon_vetices);
+        szd->calc_convex_hull(support_polygon_vetices, ref_contact_states, ee_pos, ee_rot);
+        // szd->calc_convex_hull(support_polygon_vetices, act_contact_states, ee_pos, ee_rot);
+        // szd->calc_convex_hull(support_polygon_vetices, act_contact_states, rel_ee_pos, rel_ee_rot);
+        if (!szd->is_inside_support_polygon(tmp_new_refzmp)){
+            std::cerr << "------------------------" << std::endl;
+            std::cerr << "newzmp before truncation" << std::endl;
+            std::cerr << new_refzmp.head(2).transpose() << std::endl;
+            new_refzmp.head(2) = tmp_new_refzmp;
+            std::cerr << "newzmp after truncation" << std::endl;
+            std::cerr << new_refzmp.head(2).transpose() << std::endl;
+        }
+      }
+
       // Distribute ZMP into each EE force/moment at each COP
       if (st_algorithm == OpenHRP::StabilizerService::EEFM) {
           // Modified version of distribution in Equation (4)-(6) and (10)-(13) in the paper [1].
@@ -1325,9 +1342,8 @@ void Stabilizer::calcStateForEmergencySignal()
   if (on_ground && transition_count == 0 && control_mode == MODE_ST) {
     Eigen::Vector2d tmp_cp = act_cp.head(2);
     szd->get_margined_vertices(margined_support_polygon_vetices);
-    std::vector<Eigen::Vector2d>  tmp_ch;
-    szd->calc_convex_hull(tmp_ch, margined_support_polygon_vetices, act_contact_states, rel_ee_pos, rel_ee_rot);
-    if (!is_walking || is_estop_while_walking) is_cp_outside = !szd->is_inside_support_polygon(tmp_cp, tmp_ch, - sbp_cog_offset);
+    szd->calc_convex_hull(margined_support_polygon_vetices, act_contact_states, rel_ee_pos, rel_ee_rot);
+    if (!is_walking || is_estop_while_walking) is_cp_outside = !szd->is_inside_support_polygon(tmp_cp, - sbp_cog_offset);
     if (DEBUGP) {
       std::cerr << "[" << m_profile.instance_name << "] CP value " << "[" << act_cp(0) << "," << act_cp(1) << "] [m], "
                 << "sbp cog offset [" << sbp_cog_offset(0) << " " << sbp_cog_offset(1) << "], outside ? "

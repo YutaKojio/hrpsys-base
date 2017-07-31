@@ -58,7 +58,9 @@ class SimpleZMPDistributor
     FootSupportPolygon fs, fs_mgn;
     double leg_inside_margin, leg_outside_margin, leg_front_margin, leg_rear_margin, wrench_alpha_blending;
     boost::shared_ptr<FirstOrderLowPassFilter<double> > alpha_filter;
+    std::vector<Eigen::Vector2d> ch;
 public:
+    enum in_line_type {FRONT, MIDDLE, BACK};
     enum leg_type {RLEG, LLEG, RARM, LARM, BOTH, ALL};
     SimpleZMPDistributor (const double _dt) : wrench_alpha_blending (0.5)
     {
@@ -78,7 +80,7 @@ public:
     {
         return leg_pos(0) <= (-1 * leg_rear_margin + margin);
     };
-    inline bool is_inside_support_polygon (Eigen::Vector2d& p, const std::vector<Eigen::Vector2d>& ch, const hrp::Vector3& offset = hrp::Vector3::Zero())
+    inline bool is_inside_support_polygon (Eigen::Vector2d& p, const hrp::Vector3& offset = hrp::Vector3::Zero())
     {
       // set any inner point(ip) and binary search two vertices(ch[v_a], ch[v_b]) between which p is.
       p -= offset.head(2);
@@ -96,8 +98,33 @@ public:
         }
       }
       v_b %= n_ch;
-      if (calcCrossProduct(ch[v_a], ch[v_b], p) >= 0) return true;
-      return false;
+      if (calcCrossProduct(ch[v_a], ch[v_b], p) >= 0){
+          return true;
+      } else {
+          // calc closest boundary point on the convex hull
+          Eigen::Vector2d cur_nearest_point;
+          for (size_t i; i < n_ch; i++) {
+              switch(calcProjectedPoint(cur_nearest_point, p, ch[v_b], ch[v_a])){
+              case MIDDLE:
+                  p = cur_nearest_point;
+                  return false;
+              case FRONT:
+                  v_a = v_b;
+                  v_b = (v_b + 1) % n_ch;
+                  if ((p - ch[v_a]).dot(ch[v_b] - ch[v_a]) <= 0) {
+                      p = cur_nearest_point;
+                      return false;
+                  }
+              case BACK:
+                  v_b = v_a;
+                  v_a = (v_a - 1) % n_ch;
+                  if ((p - ch[v_b]).dot(ch[v_a] - ch[v_b]) <= 0) {
+                      p = cur_nearest_point;
+                      return false;
+                  }
+              }
+          }
+      }
     };
     void print_params (const std::string& str)
     {
@@ -115,7 +142,7 @@ public:
     };
     // Calculate 2D convex hull based on Andrew's algorithm
     // Assume that the order of vs, ee, and cs is the same
-    void calc_convex_hull (std::vector<Eigen::Vector2d>& ch, const std::vector<std::vector<Eigen::Vector2d> >& vs, const std::vector<bool>& cs, const std::vector<hrp::Vector3>& ee_pos, const std::vector <hrp::Matrix33>& ee_rot)
+    void calc_convex_hull ( const std::vector<std::vector<Eigen::Vector2d> >& vs, const std::vector<bool>& cs, const std::vector<hrp::Vector3>& ee_pos, const std::vector <hrp::Matrix33>& ee_rot)
     {
       // transform coordinate
       std::vector<Eigen::Vector2d>  tvs;
@@ -1088,24 +1115,25 @@ public:
     return (a(0) - o(0)) * (b(1) - o(1)) - (a(1) - o(1)) * (b(0) - o(0));
   };
 
-  bool calcProjectedPoint(Eigen::Vector2d& ret, Eigen::Vector2d& target, Eigen::Vector2d& a, Eigen::Vector2d& b){
+  in_line_type calcProjectedPoint(Eigen::Vector2d& ret, Eigen::Vector2d& target, const Eigen::Vector2d& a, const Eigen::Vector2d& b)
+  {
     Eigen::Vector2d v1 = target - b;
     Eigen::Vector2d v2 = a - b;
     double v2_norm = v2.norm();
     if ( v2_norm = 0 ) {
         ret = a;
-        return false;
+        return FRONT;
     } else {
         double ratio = v1.dot(v2) / (v2_norm * v2_norm);
         if (ratio < 0){
             ret = b;
-            return false;
+            return BACK;
         } else if (ratio > 1){
             ret = a;
-            return false;
+            return FRONT;
         } else {
             ret = b + ratio * v2;
-            return true;
+            return MIDDLE;
         }
     }
   };
