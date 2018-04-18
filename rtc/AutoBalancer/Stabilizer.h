@@ -23,7 +23,7 @@
 
 // Service implementation headers
 // <rtc-template block="service_impl_h">
-#include "StabilizerService_impl.h"
+#include "AutoBalancerService_impl.h"
 #include "TwoDofController.h"
 #include "ZMPDistributor.h"
 #include "../ImpedanceController/JointPathEx.h"
@@ -103,8 +103,8 @@ class Stabilizer
   // no corresponding operation exists in OpenRTm-aist-0.2.0
   // virtual RTC::ReturnCode_t onRateChanged(RTC::UniqueId ec_id);
 
-  void startStabilizer(void);
-  void stopStabilizer(void);
+  // bool startStabilizer(void);
+  // bool stopStabilizer(void);
   void getCurrentParameters ();
   void getActualParameters ();
   void getTargetParameters ();
@@ -120,11 +120,11 @@ class Stabilizer
   void calcEEForceMomentControl();
   void calcSwingEEModification ();
   void limbStretchAvoidanceControl (const std::vector<hrp::Vector3>& ee_p, const std::vector<hrp::Matrix33>& ee_R);
-  void getParameter(OpenHRP::StabilizerService::stParam& i_stp);
-  void setParameter(const OpenHRP::StabilizerService::stParam& i_stp);
-  void setBoolSequenceParam (std::vector<bool>& st_bool_values, const OpenHRP::StabilizerService::BoolSequence& output_bool_values, const std::string& prop_name);
-  void setBoolSequenceParamWithCheckContact (std::vector<bool>& st_bool_values, const OpenHRP::StabilizerService::BoolSequence& output_bool_values, const std::string& prop_name);
-  std::string getStabilizerAlgorithmString (OpenHRP::StabilizerService::STAlgorithm _st_algorithm);
+  // bool setStabilizerParam(const OpenHRP::AutoBalancerService::StabilizerParam& i_param);
+  // bool getStabilizerParam(OpenHRP::AutoBalancerService::StabilizerParam& i_param);
+  void setBoolSequenceParam (std::vector<bool>& st_bool_values, const OpenHRP::AutoBalancerService::BoolSequence& output_bool_values, const std::string& prop_name);
+  void setBoolSequenceParamWithCheckContact (std::vector<bool>& st_bool_values, const OpenHRP::AutoBalancerService::BoolSequence& output_bool_values, const std::string& prop_name);
+  std::string getStabilizerAlgorithmString (OpenHRP::AutoBalancerService::STAlgorithm _st_algorithm);
   void waitSTTransition();
   // funcitons for calc final torque output
   void calcContactMatrix (hrp::dmatrix& tm, const std::vector<hrp::Vector3>& contact_p);
@@ -243,13 +243,13 @@ class Stabilizer
 
   // Service declaration
   // <rtc-template block="service_declare">
-  RTC::CorbaPort m_StabilizerServicePort;
+  RTC::CorbaPort m_AutoBalancerServicePort;
   
   // </rtc-template>
 
   // Consumer declaration
   // <rtc-template block="consumer_declare">
-  StabilizerService_impl m_service0;
+  AutoBalancerService_impl m_service0;
   
   // </rtc-template>
 
@@ -278,7 +278,13 @@ class Stabilizer
     double avoid_gain, reference_gain, max_limb_length, limb_length_margin;
     size_t ik_loop_count;
   };
-  enum cmode {MODE_IDLE, MODE_AIR, MODE_ST, MODE_SYNC_TO_IDLE, MODE_SYNC_TO_AIR} control_mode;
+  enum cmode {
+      MODE_STIDLE,
+      MODE_STAIR,
+      MODE_ST,
+      MODE_STSYNC_TO_IDLE,
+      MODE_STSYNC_TO_AIR
+  } control_mode;
   // members
   std::map<std::string, hrp::VirtualForceSensorParam> m_vfs;
   std::vector<hrp::JointPathExPtr> jpe_v;
@@ -309,7 +315,7 @@ class Stabilizer
   std::vector<double> prev_act_force_z;
   double zmp_origin_off, transition_smooth_gain, d_pos_z_root, limb_stretch_avoidance_time_const, limb_stretch_avoidance_vlimit[2], root_rot_compensation_limit[2];
   boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> > act_cogvel_filter;
-  OpenHRP::StabilizerService::STAlgorithm st_algorithm;
+  OpenHRP::AutoBalancerService::STAlgorithm st_algorithm;
   SimpleZMPDistributor* szd;
   std::vector<std::vector<Eigen::Vector2d> > support_polygon_vetices, margined_support_polygon_vetices;
   // TPCC
@@ -333,7 +339,7 @@ class Stabilizer
   hrp::Vector3 eefm_swing_pos_damping_gain, eefm_swing_rot_damping_gain;
   double total_mass, transition_time, cop_check_margin, contact_decision_threshold;
   std::vector<double> cp_check_margin, tilt_margin;
-  OpenHRP::StabilizerService::EmergencyCheckMode emergency_check_mode;
+  OpenHRP::AutoBalancerService::EmergencyCheckMode emergency_check_mode;
 };
 
 

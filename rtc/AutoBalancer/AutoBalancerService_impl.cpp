@@ -59,6 +59,16 @@ CORBA::Boolean AutoBalancerService_impl::stopAutoBalancer()
   return m_autobalancer->stopAutoBalancer();
 };
 
+// CORBA::Boolean AutoBalancerService_impl::startStabilizer(void)
+// {
+//   return m_autobalancer->startStabilizer();
+// };
+
+// CORBA::Boolean AutoBalancerService_impl::stopStabilizer(void)
+// {
+//   return m_autobalancer->stopStabilizer();
+// };
+
 CORBA::Boolean AutoBalancerService_impl::setGaitGeneratorParam(const OpenHRP::AutoBalancerService::GaitGeneratorParam& i_param)
 {
   return m_autobalancer->setGaitGeneratorParam(i_param);
@@ -83,6 +93,17 @@ CORBA::Boolean AutoBalancerService_impl::getAutoBalancerParam(OpenHRP::AutoBalan
   i_param = new OpenHRP::AutoBalancerService::AutoBalancerParam();
   return m_autobalancer->getAutoBalancerParam(*i_param);
 };
+
+// CORBA::Boolean AutoBalancerService_impl::setStabilizerParam(const OpenHRP::AutoBalancerService::AutoBalancerParam& i_param)
+// {
+//   return m_autobalancer->setStabilizerParam(i_param);
+// };
+
+// CORBA::Boolean AutoBalancerService_impl::getStabilizerParam(OpenHRP::AutoBalancerService::AutoBalancerParam_out i_param)
+// {
+//   i_param = new OpenHRP::AutoBalancerService::StabilizerParam();
+//   return m_autobalancer->getStabilizerParam(*i_param);
+// };
 
 CORBA::Boolean AutoBalancerService_impl::getFootstepParam(OpenHRP::AutoBalancerService::FootstepParam_out i_param)
 {
