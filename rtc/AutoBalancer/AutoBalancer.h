@@ -96,6 +96,7 @@ class AutoBalancer
   // no corresponding operation exists in OpenRTm-aist-0.2.0
   // virtual RTC::ReturnCode_t onRateChanged(RTC::UniqueId ec_id);
   bool goPos(const double& x, const double& y, const double& th);
+  bool goWheel(const double& x, const double& tm);
   bool goVelocity(const double& vx, const double& vy, const double& vth);
   bool goStop();
   bool emergencyStop ();
@@ -297,6 +298,7 @@ class AutoBalancer
   void fixLegToCoords2 (rats::coordinates& tmp_fix_coords);
   bool startWalking ();
   void stopWalking ();
+  void stopWheeling ();
   void copyRatscoords2Footstep(OpenHRP::AutoBalancerService::Footstep& out_fs, const rats::coordinates& in_fs);
   // static balance point offsetting
   void static_balance_point_proc_one(hrp::Vector3& tmp_input_sbp, const double ref_com_height);
@@ -322,6 +324,7 @@ class AutoBalancer
   typedef boost::shared_ptr<Stabilizer> stPtr;
   stPtr st;
   bool gg_is_walking, gg_solved;
+  bool gg_is_wheeling;
   // for abc
   typedef boost::shared_ptr<FullbodyInverseKinematicsSolver> fikPtr;
   fikPtr fik;
@@ -391,6 +394,7 @@ class AutoBalancer
   bool is_emergency_step_mode, is_emergency_touch_wall_mode, is_emergency_stopping, is_touch_wall_motion_solved, use_collision_avoidance, is_natural_walk, is_stop_early_foot;
   double cog_z_constraint, touch_wall_retrieve_time, arm_swing_deg;
   bool debug_read_steppable_region;
+  double d_wheel_angle, start_d_wheel_angle, wheel_radius;
 };
 
 

@@ -632,6 +632,13 @@ module OpenHRP
     boolean goPos(in double x, in double y, in double th);
 
     /**
+     * @brief 
+     * @param 
+     * @return true if set successfully, false otherwise
+     */
+    boolean goWheel(in double x, in double tm);
+
+    /**
      * @brief Walk at the desired velocity. If the robot is stopping, the robot starts stepping. Returns without waiting for whole steps to be executed.
      * @param i_vx[m/s], i_vy[m/s], and i_vth[deg/s] are velocity in the current mid-coords of right foot and left foot.
      * @return true if set successfully, false otherwise

@@ -949,6 +949,46 @@ namespace rats
     return solved;
   };
 
+  void gait_generator::initialize_wheel_parameter (const hrp::Vector3& cur_cog, const hrp::Vector3& cur_refcog) {
+    wheel_index = 0;
+    start_wheel_pos_x = 0.0;
+    if (!wheel_interpolator->isEmpty()) wheel_interpolator->clear();
+    double tmp = 0.0;
+    wheel_interpolator->set(&tmp);
+    tmp = 1.0;
+    wheel_interpolator->setGoal(&tmp, wheel_nodes_list.at(0).at(1).time, true);
+
+    foot_guided_controller_ptr = new foot_guided_controller<3>(dt, cur_cog(2) - wheel_nodes_list.at(0).at(0).worldcoords.pos(2), cur_refcog, total_mass, fg_zmp_cutoff_freq, gravitational_acceleration);
+    if (!double_support_zmp_interpolator->isEmpty()) double_support_zmp_interpolator->clear();
+  }
+
+  bool gait_generator::proc_one_tick_wheel (hrp::Vector3 cur_cog, const hrp::Vector3& cur_cogvel) {
+    // update_wheel_index
+    {
+      if (wheel_interpolator->isEmpty()) {
+        if (wheel_index >= wheel_nodes_list.at(0).size() - 2) {
+          return false;
+        } else {
+          wheel_index++;
+          double tmp = 0.0;
+          wheel_interpolator->set(&tmp);
+          tmp = 1.0;
+          wheel_interpolator->setGoal(&tmp, wheel_nodes_list.at(0).at(wheel_index).time, true);
+          start_wheel_pos_x = cur_wheel_pos_x;
+        }
+      }
+    }
+
+    wheel_interpolator->get(&cur_wheel_ratio);
+
+    // calc_cur_wheel_angle
+    {
+      double goal_pos_x = (wheel_nodes_list.at(0).at(wheel_index).worldcoords.rot.transpose() * (wheel_nodes_list.at(0).at(wheel_index + 1).worldcoords.pos - wheel_nodes_list.at(0).at(wheel_index).worldcoords.pos))(0);
+      cur_wheel_pos_x = start_wheel_pos_x + cur_wheel_ratio * goal_pos_x;
+      std::cerr << "aaa goal_x: " << goal_pos_x << ", cur_pos: " << cur_wheel_pos_x << std::endl;
+    }
+  }
+
   void gait_generator::update_preview_controller (bool& solved)
   {
     if ( !solved ) {
@@ -1935,6 +1975,20 @@ namespace rats
     footstep_nodes_list.push_back(boost::assign::list_of(sn1));
     footstep_nodes_list.push_back(boost::assign::list_of(sn0));
   };
+
+  bool gait_generator::go_wheel_param_2_wheel_nodes_list (const double goal_x, const double whole_time, const coordinates& start_ref_coords) {
+    wheel_nodes_list.clear();
+    std::vector<wheel_node> tmp_wheel(2); // 3段階くらいに分けてもいい
+
+    tmp_wheel.at(0) = wheel_node(start_ref_coords, 0); // 0番目は始点
+
+    coordinates abs_goal_coord = start_ref_coords;
+    abs_goal_coord.pos += start_ref_coords.rot * hrp::Vector3(goal_x, 0.0, 0.0);
+    tmp_wheel.at(1) = wheel_node(abs_goal_coord, whole_time);
+    wheel_nodes_list.push_back(tmp_wheel);
+
+    return true;
+  }
 
   void gait_generator::initialize_velocity_mode (const coordinates& _ref_coords,
 						 const double vel_x, const double vel_y, const double vel_theta,

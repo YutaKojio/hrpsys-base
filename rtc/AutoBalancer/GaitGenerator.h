@@ -71,6 +71,15 @@ namespace rats
         };
     };
 
+    struct wheel_node
+    {
+      coordinates worldcoords;
+      double time;
+      wheel_node () : worldcoords(coordinates()), time() {};
+      wheel_node (const coordinates& _worldcoords, const double _time)
+        : worldcoords(_worldcoords), time(_time) {};
+    };
+
     /* footstep parameter */
     struct footstep_parameter
     {
@@ -1149,6 +1158,12 @@ namespace rats
     boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> > fx_filter;
     boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> > zmp_filter;
     boost::shared_ptr<interpolator> double_support_zmp_interpolator;
+    boost::shared_ptr<interpolator> wheel_interpolator;
+
+    // wheel
+    std::vector< std::vector<wheel_node> > wheel_nodes_list;
+    int wheel_index;
+    double cur_wheel_ratio, cur_wheel_pos_x, start_wheel_pos_x;
 
     /* preview controller parameters */
     //preview_dynamics_filter<preview_control>* preview_controller_ptr;
@@ -1225,6 +1240,8 @@ namespace rats
         zmp_filter = boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> >(new FirstOrderLowPassFilter<hrp::Vector3>(4.0, _dt, hrp::Vector3::Zero()));
         double_support_zmp_interpolator = boost::shared_ptr<interpolator>(new interpolator(1, dt, interpolator::HOFFARBIB));
         double_support_zmp_interpolator->setName("GaitGenerator double_support_zmp_interpolator");
+        wheel_interpolator = boost::shared_ptr<interpolator>(new interpolator(1, dt, interpolator::LINEAR));
+        wheel_interpolator->setName("GaitGenerator wheel_interpolator");
     };
     ~gait_generator () {
       if ( preview_controller_ptr != NULL ) {
@@ -1241,6 +1258,8 @@ namespace rats
                                     const std::vector<step_node>& initial_swing_leg_dst_steps,
                                     const double delay = 1.6);
     bool proc_one_tick (hrp::Vector3 cur_cog = hrp::Vector3::Zero(), const hrp::Vector3& cur_cogvel = hrp::Vector3::Zero(), const hrp::Vector3& cur_cmp = hrp::Vector3::Zero());
+    void initialize_wheel_parameter (const hrp::Vector3& cur_cog, const hrp::Vector3& cur_refcog);
+    bool proc_one_tick_wheel (hrp::Vector3 cur_cog = hrp::Vector3::Zero(), const hrp::Vector3& cur_cogvel = hrp::Vector3::Zero());
     void update_preview_controller(bool& solved);
     void update_foot_guided_controller(bool& solved, const hrp::Vector3& cur_cog, const hrp::Vector3& cur_cogvel, const hrp::Vector3& cur_refcog, const hrp::Vector3& cur_refcogvel, const hrp::Vector3& cur_cmp);
     void calc_foot_origin_rot (hrp::Matrix33& foot_rot, const hrp::Matrix33& orig_rot, const hrp::Vector3& n) const;
@@ -1297,6 +1316,7 @@ namespace rats
     void go_single_step_param_2_footstep_nodes_list (const double goal_x, const double goal_y, const double goal_z, const double goal_theta, /* [mm] [mm] [mm] [deg] */
                                                const std::string& tmp_swing_leg,
                                                const coordinates& _support_leg_coords);
+    bool go_wheel_param_2_wheel_nodes_list (const double goal_x, const double whole_time, const coordinates& start_ref_coords);
     void initialize_velocity_mode (const coordinates& _ref_coords,
 				   const double vel_x, const double vel_y, const double vel_theta, /* [mm/s] [mm/s] [deg/s] */
                                    const std::vector<leg_type>& current_legs);
@@ -2013,6 +2033,7 @@ namespace rats
         }
       }
     };
+    double get_cur_wheel_pos_x () { return cur_wheel_pos_x; };
 
 
 #ifdef FOR_TESTGAITGENERATOR

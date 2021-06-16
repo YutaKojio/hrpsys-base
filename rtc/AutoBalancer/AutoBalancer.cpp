@@ -478,6 +478,8 @@ RTC::ReturnCode_t AutoBalancer::onInitialize()
     m_walkingStates.data = false;
     fix_leg_coords = coordinates();
 
+    gg_is_wheeling = false;
+
     // load virtual force sensors
     readVirtualForceSensorParamFromProperties(m_vfs, m_robot, prop["virtual_force_sensor"], std::string(m_profile.instance_name));
     // ref force port
@@ -586,6 +588,10 @@ RTC::ReturnCode_t AutoBalancer::onInitialize()
     arm_swing_deg = 30.0;
 
     debug_read_steppable_region = false;
+
+    wheel_radius = 0.15;
+    d_wheel_angle = 0.0;
+    start_d_wheel_angle = 0.0;
 
     hrp::Sensor* sen = m_robot->sensor<hrp::RateGyroSensor>("gyrometer");
     if (sen == NULL) {
@@ -858,6 +864,12 @@ RTC::ReturnCode_t AutoBalancer::onExecute(RTC::UniqueId ec_id)
             m_robot->joint(i)->q = (1-tmp_ratio) * m_qTouchWall.data[i] + tmp_ratio * m_robot->joint(i)->q;
           }
         }
+
+        // overwirte wheel angle
+        if (gg_is_wheeling) d_wheel_angle = start_d_wheel_angle + gg->get_cur_wheel_pos_x() / wheel_radius;
+        else start_d_wheel_angle = d_wheel_angle;
+        m_robot->joint(6)->q = m_qRef.data[6] + d_wheel_angle;
+        m_robot->joint(13)->q = m_qRef.data[13] + d_wheel_angle;
       } else {
         if (!emergency_transition_interpolator->isEmpty()) {
           double tmp_ratio;
@@ -1182,7 +1194,7 @@ void AutoBalancer::setABCData2ST()
   st->zmpRef = rel_ref_zmp;
   st->basePos = ref_basePos;
   st->baseRpy = baseRpy;
-  st->is_walking = gg_is_walking;
+  st->is_walking = gg_is_walking || gg_is_wheeling;
   st->is_single_walking = gg_is_walking && gg->get_is_single_walking();
   st->sbp_cog_offset = sbp_cog_offset;
 }
@@ -1218,15 +1230,19 @@ void AutoBalancer::getTargetParameters()
       gg->get_vertices(support_polygon_vertices);
       gg->calc_convex_hull(support_polygon_vertices, tmp_contact_states, tmp_ee_pos, tmp_ee_rot);
     }
-    if ( gg_is_walking ) {
+    if ( gg_is_walking || gg_is_wheeling ) {
       gg->set_default_zmp_offsets(default_zmp_offsets);
       hrp::Vector3 act_cog = st->ref_foot_origin_pos + st->ref_foot_origin_rot * st->act_cog;
       act_cog.head(2) += sbp_cog_offset.head(2);
       hrp::Vector3 act_cogvel = st->ref_foot_origin_rot * st->act_cogvel;
       hrp::Vector3 act_cmp = st->ref_foot_origin_pos + st->ref_foot_origin_rot * st->act_cmp;
-      gg_solved = gg->proc_one_tick(act_cog, act_cogvel, act_cmp);
-      st->falling_direction = gg->get_falling_direction();
-      gg->get_swing_support_mid_coords(tmp_fix_coords);
+      if (gg_is_walking) {
+        gg_solved = gg->proc_one_tick(act_cog, act_cogvel, act_cmp);
+        st->falling_direction = gg->get_falling_direction();
+        gg->get_swing_support_mid_coords(tmp_fix_coords);
+      } else { // gg_is_wheeling
+        if (!gg->proc_one_tick_wheel(act_cog, act_cogvel)) stopWheeling();
+      }
     } else {
       tmp_fix_coords = fix_leg_coords;
     }
@@ -1272,7 +1288,7 @@ void AutoBalancer::getTargetParameters()
     // Calculate ZMP, COG, and sbp targets
     hrp::Vector3 tmp_ref_cog(m_robot->calcCM());
     hrp::Vector3 tmp_foot_mid_pos = calcFootMidPosUsingZMPWeightMap ();
-    if (gg_is_walking) {
+    if (gg_is_walking || gg_is_wheeling) {
       prev_orig_cog = orig_cog;
       ref_cog = gg->get_cog();
       orig_cog = ref_cog;
@@ -1281,7 +1297,7 @@ void AutoBalancer::getTargetParameters()
     }
     limit_cog(ref_cog);
     ref_cog(2) = tmp_ref_cog(2);
-    if (gg_is_walking) {
+    if (gg_is_walking || gg_is_wheeling) {
       ref_zmp = gg->get_refzmp();
     } else {
       ref_zmp(0) = ref_cog(0);
@@ -1980,7 +1996,7 @@ void AutoBalancer::solveSimpleFullbodyIK ()
 
 void AutoBalancer::limit_cog (hrp::Vector3& cog)
 {
-  if (transition_interpolator->isEmpty() && !gg_is_walking && is_after_walking) {
+  if (transition_interpolator->isEmpty() && !gg_is_walking && !gg_is_wheeling && is_after_walking) {
     std::vector<double> start_pos(3), start_vel(3), goal_pos(3);
     double tmp_time = 5.0;
     for (size_t i = 0; i < 3; i++) {
@@ -2068,6 +2084,8 @@ void AutoBalancer::startABCparam(const OpenHRP::AutoBalancerService::StrSequence
   prev_pitch_state = false;
   prev_orig_dif_p = hrp::Vector3::Zero();
   gg->set_is_emergency_step(false);
+  d_wheel_angle = 0.0;
+  start_d_wheel_angle = 0.0;
   angular_momentum_interpolator->clear();
   roll_weight_interpolator->clear();
   pitch_weight_interpolator->clear();
@@ -2119,6 +2137,7 @@ void AutoBalancer::stopABCparamEmergency()
     it->second->clear();
   }
   gg_is_walking = false;
+  gg_is_wheeling = false;
 }
 
 bool AutoBalancer::startWalking ()
@@ -2175,6 +2194,17 @@ void AutoBalancer::stopWalking ()
   fixLegToCoords(fix_leg_coords.pos, fix_leg_coords.rot);
   gg->clear_footstep_nodes_list();
   gg_is_walking = false;
+}
+
+void AutoBalancer::stopWheeling ()
+{
+  std::vector<coordinates> tmp_end_coords_list;
+  for (std::vector<string>::iterator it = leg_names.begin(); it != leg_names.end(); it++) {
+      if ((*it).find("leg") != std::string::npos) tmp_end_coords_list.push_back(coordinates(ikp[*it].target_p0, ikp[*it].target_r0));
+  }
+  multi_mid_coords(fix_leg_coords, tmp_end_coords_list);
+  fixLegToCoords(fix_leg_coords.pos, fix_leg_coords.rot);
+  gg_is_wheeling = false;
 }
 
 bool AutoBalancer::startAutoBalancer (const OpenHRP::AutoBalancerService::StrSequence& limbs)
@@ -2249,6 +2279,28 @@ bool AutoBalancer::goPos(const double& x, const double& y, const double& th)
     std::cerr << "[" << m_profile.instance_name << "] Cannot goPos while stopping mode." << std::endl;
     return false;
   }
+}
+bool AutoBalancer::goWheel(const double& x, const double& tm)
+{
+  // initialize wheel node
+  gg->set_all_limbs(leg_names);
+  coordinates start_ref_coords;
+  std::vector<coordinates> initial_support_legs_coords; // dummy
+  std::vector<leg_type> initial_support_legs; // dummy
+  bool is_valid_gait_type = calc_inital_support_legs(0, initial_support_legs_coords, initial_support_legs, start_ref_coords);
+  if (is_valid_gait_type == false) return false;
+  // gg->set_vel_foot_offset(start_ref_coords.rot.transpose() * (ikp["rleg"].target_p0 - start_ref_coords.pos), RLEG);
+  // gg->set_vel_foot_offset(start_ref_coords.rot.transpose() * (ikp["lleg"].target_p0 - start_ref_coords.pos), LLEG);
+  bool ret = gg->go_wheel_param_2_wheel_nodes_list(x, tm, start_ref_coords);
+
+  // initialize wheel generation
+  hrp::Vector3 act_cog = st->ref_foot_origin_pos + st->ref_foot_origin_rot * st->act_cog;
+  act_cog.head(2) += sbp_cog_offset.head(2);
+  gg->initialize_wheel_parameter(act_cog, ref_cog);
+
+  gg_is_wheeling = true;
+
+  return true;
 }
 
 bool AutoBalancer::goVelocity(const double& vx, const double& vy, const double& vth)
