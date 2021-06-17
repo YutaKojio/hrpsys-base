@@ -1242,6 +1242,7 @@ void AutoBalancer::getTargetParameters()
         gg->get_swing_support_mid_coords(tmp_fix_coords);
       } else { // gg_is_wheeling
         if (!gg->proc_one_tick_wheel(act_cog, act_cogvel)) stopWheeling();
+        gg->get_wheel_mid_coords(tmp_fix_coords);
       }
     } else {
       tmp_fix_coords = fix_leg_coords;
@@ -1261,6 +1262,7 @@ void AutoBalancer::getTargetParameters()
       getOutputParametersForWalking();
     } else {
       getOutputParametersForABC();
+      if (gg_is_wheeling) getOutputParametersForWheeling();
     }
     //   Just for ik initial value
     if (control_mode == MODE_SYNC_TO_ABC) {
@@ -1395,6 +1397,17 @@ void AutoBalancer::getOutputParametersForABC ()
         m_toeheelRatio.data[idx] = rats::no_using_toe_heel_ratio;
     }
 };
+
+void AutoBalancer::getOutputParametersForWheeling ()
+{
+  for (std::map<std::string, ABCIKparam>::iterator it = ikp.begin(); it != ikp.end(); it++) {
+    size_t idx = contact_states_index_map[it->first];
+    // Check whether "it->first" ee_name is included in leg_names. leg_names is equivalent to "swing" + "support" in gg.
+    if (std::find(leg_names.begin(), leg_names.end(), it->first) != leg_names.end()) {
+      gg->get_wheel_ee_coords_from_ee_name(it->second.target_p0, it->second.target_r0, it->first);
+    }
+  }
+}
 
 void AutoBalancer::getOutputParametersForIDLE ()
 {
@@ -2296,7 +2309,16 @@ bool AutoBalancer::goWheel(const double& x, const double& tm)
   // initialize wheel generation
   hrp::Vector3 act_cog = st->ref_foot_origin_pos + st->ref_foot_origin_rot * st->act_cog;
   act_cog.head(2) += sbp_cog_offset.head(2);
-  gg->initialize_wheel_parameter(act_cog, ref_cog);
+
+  std::vector<std::string> init_swing_leg_names(1, "rleg");
+  std::vector<std::string> init_support_leg_names(1, "lleg");
+  std::vector<step_node> init_support_leg_steps, init_swing_leg_dst_steps;
+  for (std::vector<std::string>::iterator it = init_support_leg_names.begin(); it != init_support_leg_names.end(); it++)
+    init_support_leg_steps.push_back(step_node(*it, coordinates(ikp[*it].target_p0, ikp[*it].target_r0), 0, 0, 0, 0));
+  for (std::vector<std::string>::iterator it = init_swing_leg_names.begin(); it != init_swing_leg_names.end(); it++)
+    init_swing_leg_dst_steps.push_back(step_node(*it, coordinates(ikp[*it].target_p0, ikp[*it].target_r0), 0, 0, 0, 0));
+  gg->set_default_zmp_offsets(default_zmp_offsets);
+  gg->initialize_wheel_parameter(act_cog, ref_cog, init_support_leg_steps, init_swing_leg_dst_steps);
 
   gg_is_wheeling = true;
 

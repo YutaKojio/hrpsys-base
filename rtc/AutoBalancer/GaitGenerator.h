@@ -1164,6 +1164,9 @@ namespace rats
     std::vector< std::vector<wheel_node> > wheel_nodes_list;
     int wheel_index;
     double cur_wheel_ratio, cur_wheel_pos_x, start_wheel_pos_x;
+    coordinates wheel_midcoords, initial_wheel_midcoords;
+    hrp::Vector3 d_wheel_pos;
+    step_node initial_support_leg, initial_swing_leg;
 
     /* preview controller parameters */
     //preview_dynamics_filter<preview_control>* preview_controller_ptr;
@@ -1258,7 +1261,9 @@ namespace rats
                                     const std::vector<step_node>& initial_swing_leg_dst_steps,
                                     const double delay = 1.6);
     bool proc_one_tick (hrp::Vector3 cur_cog = hrp::Vector3::Zero(), const hrp::Vector3& cur_cogvel = hrp::Vector3::Zero(), const hrp::Vector3& cur_cmp = hrp::Vector3::Zero());
-    void initialize_wheel_parameter (const hrp::Vector3& cur_cog, const hrp::Vector3& cur_refcog);
+    void initialize_wheel_parameter (const hrp::Vector3& cur_cog, const hrp::Vector3& cur_refcog,
+                                     const std::vector<step_node>& initial_support_leg_steps,
+                                     const std::vector<step_node>& initial_swing_leg_dst_steps);
     bool proc_one_tick_wheel (hrp::Vector3 cur_cog = hrp::Vector3::Zero(), const hrp::Vector3& cur_cogvel = hrp::Vector3::Zero());
     void update_preview_controller(bool& solved);
     void update_foot_guided_controller(bool& solved, const hrp::Vector3& cur_cog, const hrp::Vector3& cur_cogvel, const hrp::Vector3& cur_refcog, const hrp::Vector3& cur_refcogvel, const hrp::Vector3& cur_cmp);
@@ -1879,6 +1884,7 @@ namespace rats
       return tmp;
     };
     void get_swing_support_mid_coords(coordinates& ret) const { lcg.get_swing_support_mid_coords(ret); };
+    void get_wheel_mid_coords(coordinates& ret) const { ret = wheel_midcoords; };
     void get_stride_parameters (double& _stride_fwd_x, double& _stride_outside_y, double& _stride_outside_theta,
                                 double& _stride_bwd_x, double& _stride_inside_y, double& _stride_inside_theta) const
     {
@@ -1990,6 +1996,19 @@ namespace rats
             return false;
         }
         return true;
+    };
+    bool get_wheel_ee_coords_from_ee_name (hrp::Vector3& cpos, hrp::Matrix33& crot, const std::string& ee_name) const
+    {
+      if (ee_name == "lleg") { // If support
+        cpos = initial_support_leg.worldcoords.pos + d_wheel_pos;
+        crot = initial_support_leg.worldcoords.rot;
+      } else if (ee_name == "rleg") { // If swing
+        cpos = initial_swing_leg.worldcoords.pos + d_wheel_pos;
+        crot = initial_swing_leg.worldcoords.rot;
+      } else { // Otherwise
+        return false;
+      }
+      return true;
     };
     // Get current support state (true=support, false=swing) by checking whether given EE name is swing or support
     bool get_current_support_state_from_ee_name (const std::string& ee_name) const

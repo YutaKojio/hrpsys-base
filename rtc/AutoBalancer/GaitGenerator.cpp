@@ -949,7 +949,9 @@ namespace rats
     return solved;
   };
 
-  void gait_generator::initialize_wheel_parameter (const hrp::Vector3& cur_cog, const hrp::Vector3& cur_refcog) {
+  void gait_generator::initialize_wheel_parameter (const hrp::Vector3& cur_cog, const hrp::Vector3& cur_refcog,
+                                                 const std::vector<step_node>& initial_support_leg_steps,
+                                                 const std::vector<step_node>& initial_swing_leg_dst_steps) {
     wheel_index = 0;
     start_wheel_pos_x = 0.0;
     if (!wheel_interpolator->isEmpty()) wheel_interpolator->clear();
@@ -958,7 +960,12 @@ namespace rats
     tmp = 1.0;
     wheel_interpolator->setGoal(&tmp, wheel_nodes_list.at(0).at(1).time, true);
 
-    foot_guided_controller_ptr = new foot_guided_controller<3>(dt, cur_cog(2) - wheel_nodes_list.at(0).at(0).worldcoords.pos(2), cur_refcog, total_mass, fg_zmp_cutoff_freq, gravitational_acceleration);
+    initial_wheel_midcoords = wheel_nodes_list.at(0).at(0).worldcoords;
+    initial_support_leg = initial_support_leg_steps.front();
+    initial_swing_leg = initial_swing_leg_dst_steps.front();
+    d_wheel_pos = hrp::Vector3::Zero();
+    
+    foot_guided_controller_ptr = new foot_guided_controller<3>(dt, cur_cog(2) - initial_wheel_midcoords.pos(2), cur_refcog, total_mass, fg_zmp_cutoff_freq, gravitational_acceleration);
     if (!double_support_zmp_interpolator->isEmpty()) double_support_zmp_interpolator->clear();
   }
 
@@ -981,11 +988,18 @@ namespace rats
 
     wheel_interpolator->get(&cur_wheel_ratio);
 
+    // calc_cur_zmp
+    {
+      wheel_midcoords.pos = (1.0 - cur_wheel_ratio) * wheel_nodes_list.at(0).at(wheel_index).worldcoords.pos + cur_wheel_ratio * wheel_nodes_list.at(0).at(wheel_index + 1).worldcoords.pos;
+      wheel_midcoords.rot = wheel_nodes_list.at(0).at(wheel_index).worldcoords.rot;
+      d_wheel_pos = wheel_midcoords.pos - initial_wheel_midcoords.pos;
+      
+    }
+
     // calc_cur_wheel_angle
     {
       double goal_pos_x = (wheel_nodes_list.at(0).at(wheel_index).worldcoords.rot.transpose() * (wheel_nodes_list.at(0).at(wheel_index + 1).worldcoords.pos - wheel_nodes_list.at(0).at(wheel_index).worldcoords.pos))(0);
       cur_wheel_pos_x = start_wheel_pos_x + cur_wheel_ratio * goal_pos_x;
-      std::cerr << "aaa goal_x: " << goal_pos_x << ", cur_pos: " << cur_wheel_pos_x << std::endl;
     }
   }
 

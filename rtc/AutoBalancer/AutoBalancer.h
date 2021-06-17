@@ -284,6 +284,7 @@ class AutoBalancer
   // Output parameters are EE, limbCOPOffset, contactStates, controlSwingSupportTime, toeheelPhaseRatio
   void getOutputParametersForWalking ();
   void getOutputParametersForABC ();
+  void getOutputParametersForWheeling ();
   void getOutputParametersForIDLE ();
   void interpolateLegNamesAndZMPOffsets();
   void calcFixCoordsForAdjustFootstep (rats::coordinates& tmp_fix_coords);
