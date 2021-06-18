@@ -951,7 +951,8 @@ namespace rats
 
   void gait_generator::initialize_wheel_parameter (const hrp::Vector3& cur_cog, const hrp::Vector3& cur_refcog,
                                                  const std::vector<step_node>& initial_support_leg_steps,
-                                                 const std::vector<step_node>& initial_swing_leg_dst_steps) {
+                                                 const std::vector<step_node>& initial_swing_leg_dst_steps)
+  {
     wheel_index = 0;
     start_wheel_pos_x = 0.0;
     if (!wheel_interpolator->isEmpty()) wheel_interpolator->clear();
@@ -964,15 +965,28 @@ namespace rats
     initial_support_leg = initial_support_leg_steps.front();
     initial_swing_leg = initial_swing_leg_dst_steps.front();
     d_wheel_pos = hrp::Vector3::Zero();
+    prev_wheel_pos = initial_wheel_midcoords.pos;
     
+    if ( foot_guided_controller_ptr != NULL ) {
+      delete foot_guided_controller_ptr;
+      foot_guided_controller_ptr = NULL;
+    }
     foot_guided_controller_ptr = new foot_guided_controller<3>(dt, cur_cog(2) - initial_wheel_midcoords.pos(2), cur_refcog, total_mass, fg_zmp_cutoff_freq, gravitational_acceleration);
+    foot_guided_controller_ptr->set_dc_off(hrp::Vector3::Zero());
     if (!double_support_zmp_interpolator->isEmpty()) double_support_zmp_interpolator->clear();
   }
 
-  bool gait_generator::proc_one_tick_wheel (hrp::Vector3 cur_cog, const hrp::Vector3& cur_cogvel) {
+  bool gait_generator::proc_one_tick_wheel (hrp::Vector3 cur_cog, hrp::Vector3 cur_cogvel)
+  {
+    hrp::Vector3 cur_refcog, cur_refcogvel, dc_off;
+    foot_guided_controller_ptr->get_pos(cur_refcog);
+    foot_guided_controller_ptr->get_vel(cur_refcogvel);
+    foot_guided_controller_ptr->get_dc_off(dc_off);
+    cur_cog -= dc_off;
+              
     // update_wheel_index
     {
-      if (wheel_interpolator->isEmpty()) {
+      if (wheel_interpolator->isEmpty() || wheel_interpolator->get_remain_time() < 2*dt) {
         if (wheel_index >= wheel_nodes_list.at(0).size() - 2) {
           return false;
         } else {
@@ -980,7 +994,7 @@ namespace rats
           double tmp = 0.0;
           wheel_interpolator->set(&tmp);
           tmp = 1.0;
-          wheel_interpolator->setGoal(&tmp, wheel_nodes_list.at(0).at(wheel_index).time, true);
+          wheel_interpolator->setGoal(&tmp, wheel_nodes_list.at(0).at(wheel_index + 1).time, true);
           start_wheel_pos_x = cur_wheel_pos_x;
         }
       }
@@ -988,18 +1002,106 @@ namespace rats
 
     wheel_interpolator->get(&cur_wheel_ratio);
 
-    // calc_cur_zmp
+    hrp::Vector3 zmp_offset = (0.5 * (rg.get_default_zmp_offset(RLEG) + rg.get_default_zmp_offset(LLEG)));
+
+    // calc_ref_zmp
     {
       wheel_midcoords.pos = (1.0 - cur_wheel_ratio) * wheel_nodes_list.at(0).at(wheel_index).worldcoords.pos + cur_wheel_ratio * wheel_nodes_list.at(0).at(wheel_index + 1).worldcoords.pos;
       wheel_midcoords.rot = wheel_nodes_list.at(0).at(wheel_index).worldcoords.rot;
       d_wheel_pos = wheel_midcoords.pos - initial_wheel_midcoords.pos;
-      
+
+      fg_ref_zmp = wheel_midcoords.pos + wheel_midcoords.rot * zmp_offset;
     }
+
+    cur_cogvel += (wheel_midcoords.pos - prev_wheel_pos) / dt;
+    prev_wheel_pos = wheel_midcoords.pos;
+
+    double cur_omega = std::sqrt(gravitational_acceleration / (cur_cog - wheel_nodes_list.at(0).at(wheel_index).worldcoords.pos)(2));
+    double ref_omega = std::sqrt(gravitational_acceleration / (cur_refcog - wheel_nodes_list.at(0).at(wheel_index).worldcoords.pos)(2));
+    act_cp = cur_cog + cur_cogvel / cur_omega + dc_off;
+    ref_cp = cur_refcog + cur_refcogvel / ref_omega;
 
     // calc_cur_wheel_angle
     {
       double goal_pos_x = (wheel_nodes_list.at(0).at(wheel_index).worldcoords.rot.transpose() * (wheel_nodes_list.at(0).at(wheel_index + 1).worldcoords.pos - wheel_nodes_list.at(0).at(wheel_index).worldcoords.pos))(0);
       cur_wheel_pos_x = start_wheel_pos_x + cur_wheel_ratio * goal_pos_x;
+    }
+
+    // update_foot_guided_wheel_controller
+    {
+      hrp::Vector3 ref_dcm;
+      double remain_time, double_remain_time;
+      foot_guided_controller_ptr->set_dz(cur_cog(2) - wheel_nodes_list.at(0).at(wheel_index).worldcoords.pos(2));
+      hrp::Vector3 dz = hrp::Vector3(0, 0, foot_guided_controller_ptr->get_dz());
+
+      foot_guided_controller_ptr->set_x_k(cur_refcog, cur_refcogvel);
+      if (use_act_states) foot_guided_controller_ptr->set_act_x_k(cur_cog, cur_cogvel, false);
+      else foot_guided_controller_ptr->set_act_x_k(cur_refcog, cur_refcogvel, false);
+
+      ref_dcm = wheel_nodes_list.at(0).back().worldcoords.pos + wheel_nodes_list.at(0).back().worldcoords.rot * zmp_offset;
+      remain_time = double_remain_time = wheel_interpolator->get_remain_time();
+      for (size_t i = wheel_index + 2; i < wheel_nodes_list.at(0).size() - 1; i++) { // 最後は直線
+        remain_time += wheel_nodes_list.at(0).at(i).time;
+      }
+
+      hrp::Vector3 feedforward_zmp;
+      hrp::Vector3 start_ref_zmp = wheel_nodes_list.at(0).front().worldcoords.pos + wheel_nodes_list.at(0).front().worldcoords.rot * zmp_offset;
+      hrp::Vector3 goal_ref_zmp = wheel_nodes_list.at(0).back().worldcoords.pos + wheel_nodes_list.at(0).back().worldcoords.rot * zmp_offset;
+
+      ref_dcm += dz;
+      fg_ref_zmp += dz;
+      start_ref_zmp += dz;
+      goal_ref_zmp += dz;
+      foot_guided_controller_ptr->update_wheel_control(zmp, feedforward_zmp, remain_time, ref_dcm, fg_ref_zmp, (wheel_index == wheel_nodes_list.at(0).size()-3), 
+                                                       start_ref_zmp, goal_ref_zmp,
+                                                       double_remain_time, wheel_nodes_list.at(0).at(wheel_nodes_list.at(0).size()-3).time);
+
+      // interpolate zmp when double support phase
+      if (remain_time < 0.0) { // TODO: 両足支持期と同じくらいの長さにする
+        double tmp_ratio = 0.0;
+        if (double_support_zmp_interpolator->isEmpty()) {
+          double tmp_time = remain_time;
+          double_support_zmp_interpolator->set(&tmp_ratio);
+          tmp_ratio = 1.0;
+          double_support_zmp_interpolator->setGoal(&tmp_ratio, tmp_time, true);
+        }
+        double_support_zmp_interpolator->get(&tmp_ratio, true);
+        hrp::Vector3 tmp_zmp = feedforward_zmp;
+        zmp = tmp_ratio * tmp_zmp + (1.0 - tmp_ratio) * zmp;
+      } else if (!double_support_zmp_interpolator->isEmpty()) {
+        double_support_zmp_interpolator->clear();
+      }
+      // truncate zmp (assume RLEG, LLEG)
+      Eigen::Vector2d tmp_zmp(zmp.head(2)), tmp_fzmp(feedforward_zmp.head(2));
+      if (!is_inside_convex_hull(tmp_zmp, hrp::Vector3::Zero(), true)) { // TODO: should consider footstep rot
+        zmp.head(2) = tmp_zmp;
+      }
+      if (!is_inside_convex_hull(tmp_fzmp, hrp::Vector3::Zero(), true)) { // TODO: should consider footstep rot
+        feedforward_zmp.head(2) = tmp_fzmp;
+      }
+      foot_guided_controller_ptr->set_zmp(zmp, feedforward_zmp);
+      // calc cog
+      hrp::Vector3 tmpfxy = hrp::Vector3::Zero();
+      foot_guided_controller_ptr->update_state(cog, tmpfxy);
+      // convert zmp -> refzmp
+      refzmp = zmp - dz;
+      
+      // for log
+      tmp[0] = fg_ref_zmp(0);
+      tmp[1] = fg_ref_zmp(1);
+      tmp[2] = ref_dcm(0);
+      tmp[3] = ref_dcm(1);
+      tmp[4] = refzmp(0);
+      tmp[5] = refzmp(1);
+      tmp[6] = ref_cp(0);
+      tmp[7] = ref_cp(1);
+      tmp[8] = act_cp(0);
+      tmp[9] = act_cp(1);
+      tmp[10] = double_remain_time;
+      tmp[11] = remain_time;
+      // tmp[12] = flywheel_tau(0);
+      // tmp[13] = flywheel_tau(1);
+      // tmp[14] = falling_direction;
     }
   }
 
@@ -1992,13 +2094,18 @@ namespace rats
 
   bool gait_generator::go_wheel_param_2_wheel_nodes_list (const double goal_x, const double whole_time, const coordinates& start_ref_coords) {
     wheel_nodes_list.clear();
-    std::vector<wheel_node> tmp_wheel(2); // 3段階くらいに分けてもいい
+    std::vector<wheel_node> tmp_wheel;
 
-    tmp_wheel.at(0) = wheel_node(start_ref_coords, 0); // 0番目は始点
+    tmp_wheel.push_back(wheel_node(start_ref_coords, 0)); // 0番目は始点
+
+    tmp_wheel.push_back(wheel_node(start_ref_coords, whole_time)); // 1番目は直線
 
     coordinates abs_goal_coord = start_ref_coords;
     abs_goal_coord.pos += start_ref_coords.rot * hrp::Vector3(goal_x, 0.0, 0.0);
-    tmp_wheel.at(1) = wheel_node(abs_goal_coord, whole_time);
+    tmp_wheel.push_back(wheel_node(abs_goal_coord, whole_time));
+
+    tmp_wheel.push_back(wheel_node(abs_goal_coord, 1)); // 最後は直線
+
     wheel_nodes_list.push_back(tmp_wheel);
 
     return true;

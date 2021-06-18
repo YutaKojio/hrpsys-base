@@ -1165,7 +1165,7 @@ namespace rats
     int wheel_index;
     double cur_wheel_ratio, cur_wheel_pos_x, start_wheel_pos_x;
     coordinates wheel_midcoords, initial_wheel_midcoords;
-    hrp::Vector3 d_wheel_pos;
+    hrp::Vector3 d_wheel_pos, prev_wheel_pos;
     step_node initial_support_leg, initial_swing_leg;
 
     /* preview controller parameters */
@@ -1236,6 +1236,7 @@ namespace rats
         for (size_t i = 0; i < 2; i++) cp_check_margin[i] = 0.025;
         for (size_t i = 0; i < 3; i++) emergency_step_time[i] = 0.8;
         for (size_t i = 0; i < 2; i++) debug_landing_height_xrange[i] = 0.0;
+        for (size_t i = 0; i < 23; i++) tmp[i] = 0.0;
         sum_d_footstep_thre = hrp::Vector3(0.5, 0.5, 0.0);
         footstep_check_delta = hrp::Vector3(0.03, 0.03, 0.0);
         cp_filter = boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> >(new FirstOrderLowPassFilter<hrp::Vector3>(1e6, _dt, hrp::Vector3::Zero()));
@@ -1264,7 +1265,7 @@ namespace rats
     void initialize_wheel_parameter (const hrp::Vector3& cur_cog, const hrp::Vector3& cur_refcog,
                                      const std::vector<step_node>& initial_support_leg_steps,
                                      const std::vector<step_node>& initial_swing_leg_dst_steps);
-    bool proc_one_tick_wheel (hrp::Vector3 cur_cog = hrp::Vector3::Zero(), const hrp::Vector3& cur_cogvel = hrp::Vector3::Zero());
+    bool proc_one_tick_wheel (hrp::Vector3 cur_cog = hrp::Vector3::Zero(), hrp::Vector3 cur_cogvel = hrp::Vector3::Zero());
     void update_preview_controller(bool& solved);
     void update_foot_guided_controller(bool& solved, const hrp::Vector3& cur_cog, const hrp::Vector3& cur_cogvel, const hrp::Vector3& cur_refcog, const hrp::Vector3& cur_refcogvel, const hrp::Vector3& cur_cmp);
     void calc_foot_origin_rot (hrp::Matrix33& foot_rot, const hrp::Matrix33& orig_rot, const hrp::Vector3& n) const;
